@@ -8,10 +8,17 @@ ListLines 0
 ; ==============================================================================
 
 ; --- [1.1] 悬浮窗相对鼠标的偏移坐标 (X轴：正向右/负向左 | Y轴：正向下/负向上) ---
-global CFG_PromptOffsetX    := 15     ; [Gemini 提示词窗] 默认处于鼠标右方 15px
+global CFG_PromptOffsetX    := -180   ; [Gemini 提示词窗] 默认处于鼠标右方 15px
 global CFG_PromptOffsetY    := -57    ; [Gemini 提示词窗] 默认处于鼠标上方 57px
+
 global CFG_GeminiOffsetX    := -60    ; [Gemini 直接上传] 默认处于鼠标左方 60px
 global CFG_GeminiOffsetY    := -60    ; [Gemini 直接上传] 默认处于鼠标上方 60px
+
+global CFG_YouGlishOffsetX  := -40    ; [YouGlish 发音搜索] 默认处于鼠标左方 40px (注：代码内已额外扣除图标自身宽度以保证向左延展)
+global CFG_YouGlishOffsetY  := 20     ; [YouGlish 发音搜索] 默认处于鼠标下方 15px (注：代码内已额外扣除图标一半高度以保证居中)
+
+global CFG_CopiedOffsetX    := 100    ; [Copied 成功提示] 默认处于鼠标右方 70px
+global CFG_CopiedOffsetY    := 50     ; [Copied 成功提示] 默认处于鼠标上方 2px
 
 ; --- [1.2] 防误触与划词参数 ---
 global MIN_DRAG_X           := 35     ; 触发复制的最小水平移动距离 (像素)
@@ -435,12 +442,12 @@ HideFloatingIcon(*) {
 }
 
 ShowYouGlishIcon() {
-    global g_YgWidth, g_YgHeight
+    global g_YgWidth, g_YgHeight, CFG_YouGlishOffsetX, CFG_YouGlishOffsetY
     oldCoord := A_CoordModeMouse
     CoordMode("Mouse", "Screen")
     MouseGetPos(&mX, &mY)
     CoordMode("Mouse", oldCoord)
-    YouGlishGui.Show("x" (mX - 40 - g_YgWidth) " y" (mY + 15 - (g_YgHeight / 2)) " NoActivate")
+    YouGlishGui.Show("x" (mX + CFG_YouGlishOffsetX - g_YgWidth) " y" (mY + CFG_YouGlishOffsetY - (g_YgHeight / 2)) " NoActivate")
     WinSetAlwaysOnTop(1, YouGlishGui.Hwnd)
     SetTimer(HideYouGlishIcon, -3000)
 }
@@ -449,11 +456,12 @@ HideYouGlishIcon(*) {
 }
 
 ShowCopiedIcon() {
+    global CFG_CopiedOffsetX, CFG_CopiedOffsetY
     oldCoord := A_CoordModeMouse
     CoordMode("Mouse", "Screen")
     MouseGetPos(&mX, &mY)
     CoordMode("Mouse", oldCoord)
-    CopiedGui.Show("x" (mX + 70) " y" (mY - 2) " NoActivate")
+    CopiedGui.Show("x" (mX + CFG_CopiedOffsetX) " y" (mY + CFG_CopiedOffsetY) " NoActivate")
     WinSetAlwaysOnTop(1, CopiedGui.Hwnd)
     SetTimer(HideCopiedIcon, -1500)
 }
