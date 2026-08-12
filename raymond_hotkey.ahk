@@ -12,7 +12,7 @@ global CFG_PromptOffsetX    := -180   ; [Gemini 提示词窗] 默认处于鼠标
 global CFG_PromptOffsetY    := -57    ; [Gemini 提示词窗] 默认处于鼠标上方 57px
 
 global CFG_GeminiOffsetX    := -10    ; [Gemini 直接上传] 默认处于鼠标左方 60px
-global CFG_GeminiOffsetY    := -120    ; [Gemini 直接上传] 默认处于鼠标上方 60px
+global CFG_GeminiOffsetY    := -120   ; [Gemini 直接上传] 默认处于鼠标上方 60px
 
 global CFG_YouGlishOffsetX  := -40    ; [YouGlish 发音搜索] 默认处于鼠标左方 40px (注：代码内已额外扣除图标自身宽度以保证向左延展)
 global CFG_YouGlishOffsetY  := 20     ; [YouGlish 发音搜索] 默认处于鼠标下方 15px (注：代码内已额外扣除图标一半高度以保证居中)
@@ -28,34 +28,40 @@ global MAX_DRAG_TIME_MS     := 15000  ; 触发复制的最大拖拽时间 (毫�
 global ESC_LONG_PRESS_MS    := 400    ; 长按 Esc 接管左键关闭窗口的时限 (毫秒)
 
 ; --- [1.3] 路径管理：基础目录与关键程序 ---
-global PATH_AppDir          := "C:\Users\raymond\WPSDrive\1158436994\WPS云盘\Raymond_Workstation\chrome_app\"
-global PATH_Chrome          := "C:\Program Files\Google\Chrome\Application\chrome.exe"
+global PATH_AppDir          := A_ScriptDir "\resources\"
+
+; 动态获取 Chrome 路径，保证跨电脑 100% 兼容
+Try {
+    global PATH_Chrome := RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe")
+} Catch {
+    global PATH_Chrome := "C:\Program Files\Google\Chrome\Application\chrome.exe"
+}
+
 global PATH_EditorExe       := A_ScriptDir "\GeminiPromptEditor.exe"
 global PATH_ActivePrompt    := A_ScriptDir "\active_prompt.txt"
 
 ; --- [1.4] 路径管理：图示与按钮素材 ---
-global ICON_Prompt          := PATH_AppDir "programfiles\photo\gemini_prompt.png"
-global ICON_Gemini          := PATH_AppDir "programfiles\photo\gemini.png"
-global ICON_YouGlish        := PATH_AppDir "programfiles\photo\youglish_auto_load.png"
-global ICON_Copied          := PATH_AppDir "programfiles\photo\copied.png"
+global ICON_Prompt          := PATH_AppDir "photo\gemini_prompt.png"
+global ICON_Gemini          := PATH_AppDir "photo\gemini.png"
+global ICON_YouGlish        := PATH_AppDir "photo\youglish_auto_load.png"
+global ICON_Copied          := PATH_AppDir "photo\copied.png"
 
-; --- [1.5] 路径管理：快捷启动软件与脚本链接 ---
-global APP_GeminiLnk        := PATH_AppDir "Gemini.lnk"
-global APP_YouGlishLnk      := PATH_AppDir "youglish.lnk"
-global APP_DouYin           := PATH_AppDir "抖音.lnk"
-global APP_YouTube          := PATH_AppDir "YouTube.lnk"
-global APP_Bilibili         := PATH_AppDir "bilibili.lnk"
-global APP_Wps              := PATH_AppDir "WPS听记.lnk"
-global APP_WxSrf            := PATH_AppDir "微信输入法.lnk"
-global APP_Zhihu            := PATH_AppDir "知乎.lnk"
-global APP_Reddit           := PATH_AppDir "Reddit.lnk"
+; --- [1.5] 路径管理：快捷启动软件与网址链接 (摒弃.lnk文件) ---
+global URL_Gemini           := "https://gemini.google.com/app"
+global URL_YouGlish         := "https://youglish.com/"
+global URL_DouYin           := "https://www.douyin.com/"
+global URL_YouTube          := "https://www.youtube.com/"
+global URL_Bilibili         := "https://www.bilibili.com/"
+global URL_Github           := "https://github.com/"
+global URL_Zhihu            := "https://www.zhihu.com/"
+global URL_Reddit           := "https://www.reddit.com/"
+
 global APP_Telegram         := PATH_AppDir "programfiles\Telegram Desktop\Telegram.exe"
 global APP_Everything       := PATH_AppDir "programfiles\Everything\Everything.exe"
-global APP_ScreenToGif      := "C:\Program Files\WindowsApps\33823Nicke.ScreenToGif_2.43.2.0_x64__99xjgbc30gqtw\ScreenToGif.exe"
 global APP_Anytxt           := "C:\Program Files\Anytxt Searcher\ATGUI.exe"
 global APP_Notepad          := "C:\WINDOWS\notepad.exe"
 
-; 👇【已升级为 A_ScriptDir 相对路径】同目录下的 4 个 Windows 批处理脚本
+; 同目录下的 4 个 Windows 批处理脚本 (使用 A_ScriptDir 相对路径，确保移动项目文件夹也能正常运行)
 global APP_Ethernet         := A_ScriptDir "\Toggle_Ethernet_切换有线网口状态.bat"
 global APP_Shutdown         := A_ScriptDir "\shutdown_30second_等待30秒关机.bat"
 global APP_Restart          := A_ScriptDir "\restart_30second_等待30秒重启.bat"
@@ -162,15 +168,15 @@ PentaNAction() {
 }
 TripleZAction() { 
     Send("{Backspace 3}")
-    SmartRun(APP_Zhihu)
+    RunChromePWA(URL_Zhihu)
 }
 TripleRAction() { 
     Send("{Backspace 3}")
-    SmartRun(APP_Reddit)
+    RunChromePWA(URL_Reddit)
 }
 TripleYAction() { 
     Send("{Backspace 3}")
-    SmartRun(APP_YouTube)
+    RunChromePWA(URL_YouTube)
 }
 TripleEAction() { 
     Send("{Backspace 3}")
@@ -203,24 +209,31 @@ QuadRButtonAction() {
 
 ; --- [3.3] 波浪号组合键启动器 (` & 数字/字母) ---
 ` & 1::SmartRun(PATH_Chrome)
-` & 2::SmartRun(APP_GeminiLnk)
-` & 3::SmartRun(APP_Wps)
-` & 4::SmartRun(APP_Bilibili)
-` & 5::SmartRun(APP_YouTube)
-` & 6::SmartRun(APP_YouGlishLnk)
-` & 7::SmartRun(APP_DouYin)
+` & 2::RunChromePWA(URL_Gemini)
+` & 3::RunChromePWA(URL_Github)
+` & 4::RunChromePWA(URL_Bilibili)
+` & 5::RunChromePWA(URL_YouTube)
+` & 6::RunChromePWA(URL_YouGlish)
+` & 7::RunChromePWA(URL_DouYin)
 ` & 8::SmartRun(APP_Telegram)
 ` & 9::SmartRun(APP_Restart)
 ` & 0::SmartRun(APP_Shutdown)
 ` & n::SmartRun(APP_Ethernet)
-` & g::SmartRun(APP_ScreenToGif)
-` & s::SmartRun(APP_SecurityCenter)  ; 👇【新增】组合键触发关闭 Windows 安全中心设置
+` & s::SmartRun(APP_SecurityCenter)  
 
 SmartRun(Path) {
     if FileExist(Path) {
         Run(Path)
     } else {
         ShowTip("找不到文件或路径：`n" . Path)
+    }
+}
+
+RunChromePWA(URL) {
+    if FileExist(PATH_Chrome) {
+        Run('"' PATH_Chrome '" --app="' URL '"')
+    } else {
+        ShowTip("无法启动：未在系统中找到 Chrome 浏览器`n" PATH_Chrome)
     }
 }
 
@@ -574,7 +587,7 @@ TriggerPromptUpload(*) {
     }
 }
 TriggerUpload(*) {
-    global g_IsImageReady, g_IsTextReady, APP_GeminiLnk
+    global g_IsImageReady, g_IsTextReady, URL_Gemini, PATH_Chrome
     SetTimer(HideFloatingIcon, 0)
     FloatingGui.Hide()
     g_IsImageReady := false
@@ -598,7 +611,7 @@ TriggerUpload(*) {
             Send("gi")
             Sleep(200)
         } else {
-            Run(APP_GeminiLnk)
+            Run('"' PATH_Chrome '" --app="' URL_Gemini '"')
             if WinWait(targetTitle, , 5) {
                 WinActivate(targetTitle)
                 WinWaitActive(targetTitle, , 2)
@@ -612,14 +625,14 @@ TriggerUpload(*) {
         Sleep(400)
         Send("{Enter}")
     } catch {
-        MsgBox("无法启动 Gemini，请检查路径：`n" APP_GeminiLnk, "路径错误")
+        MsgBox("无法启动 Gemini，请检查路径。`n" URL_Gemini, "启动错误")
     }
 }
 
 ; --- [5.4] 触发逻辑：YouGlish 划词自动发音查询 ---
 ^+y::TriggerYouGlish()
 TriggerYouGlish(*) {
-    global g_IsTextReady, APP_YouGlishLnk
+    global g_IsTextReady, URL_YouGlish, PATH_Chrome
     SetTimer(HideYouGlishIcon, 0)
     YouGlishGui.Hide()
     g_IsTextReady := false
@@ -642,7 +655,7 @@ TriggerYouGlish(*) {
             Send("gi")
             Sleep(200)
         } else {
-            Run(APP_YouGlishLnk)
+            Run('"' PATH_Chrome '" --app="' URL_YouGlish '"')
             if WinWait(targetTitle, , 5) {
                 WinActivate(targetTitle)
                 WinWaitActive(targetTitle, , 2)
@@ -662,7 +675,7 @@ TriggerYouGlish(*) {
         Sleep(400)
         Send("{Enter}")
     } catch {
-        MsgBox("无法启动 YouGlish，请检查路径：`n" APP_YouGlishLnk, "路径错误")
+        MsgBox("无法启动 YouGlish，请检查路径。`n" URL_YouGlish, "启动错误")
     }
 }
 
