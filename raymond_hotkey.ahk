@@ -11,8 +11,8 @@ ListLines 0
 global CFG_PromptOffsetX    := -180   ; [Gemini 提示词窗] 默认处于鼠标右方 15px
 global CFG_PromptOffsetY    := -57    ; [Gemini 提示词窗] 默认处于鼠标上方 57px
 
-global CFG_GeminiOffsetX    := -60    ; [Gemini 直接上传] 默认处于鼠标左方 60px
-global CFG_GeminiOffsetY    := -60    ; [Gemini 直接上传] 默认处于鼠标上方 60px
+global CFG_GeminiOffsetX    := -10    ; [Gemini 直接上传] 默认处于鼠标左方 60px
+global CFG_GeminiOffsetY    := -120    ; [Gemini 直接上传] 默认处于鼠标上方 60px
 
 global CFG_YouGlishOffsetX  := -40    ; [YouGlish 发音搜索] 默认处于鼠标左方 40px (注：代码内已额外扣除图标自身宽度以保证向左延展)
 global CFG_YouGlishOffsetY  := 20     ; [YouGlish 发音搜索] 默认处于鼠标下方 15px (注：代码内已额外扣除图标一半高度以保证居中)
@@ -183,10 +183,10 @@ TripleAAction() {
 QuadGAction() {
     Send("{Backspace 4}")
     Sleep(30)
-    if (g_IsImageReady) {
+    if (g_IsImageReady || g_IsTextReady) {
         TriggerUpload()
     } else {
-        ShowTip("剪贴板中无有效图片")
+        ShowTip("剪贴板中无有效图片或文本")
     }
 }
 QuadDAction() {
@@ -269,7 +269,7 @@ ClipboardChangedHandler(DataType) {
 }
 
 CheckClipboardForImage() {
-    global g_LastImageCopyTime, g_SavedImageClip, g_LastCopiedText, g_IsImageReady
+    global g_LastImageCopyTime, g_SavedImageClip, g_LastCopiedText, g_IsImageReady, g_IsTextReady
     
     ; 检查剪贴板是否存在图像 CF_BITMAP=2, CF_DIB=8, CF_DIBV5=17
     if (DllCall("IsClipboardFormatAvailable", "UInt", 2) 
@@ -279,13 +279,16 @@ CheckClipboardForImage() {
         g_SavedImageClip    := ClipboardAll()
         g_LastCopiedText    := ""
         g_IsImageReady      := true
+        g_IsTextReady       := false
         
         ShowPromptIcon()    ; [上放] 显示 Gemini 提示词窗
         ShowFloatingIcon()  ; [左放] 显示 Gemini 直接黏贴窗
     } else {
         g_IsImageReady      := false
         g_LastImageCopyTime := 0
-        HideFloatingIcon()
+        if (!g_IsTextReady) {
+            HideFloatingIcon()
+        }
     }
 }
 
@@ -393,6 +396,7 @@ CheckClipboardForImage() {
                 ShowPromptIcon()    ; [右上] Gemini提示词
                 ShowCopiedIcon()    ; [正右] 复制反馈字样
                 ShowYouGlishIcon()  ; [正左] YouGlish发音
+                ShowFloatingIcon()  ; [左上] Gemini直接上传
             } else {
                 A_Clipboard := oldClip
             }
@@ -469,7 +473,7 @@ HideCopiedIcon(*) {
     CopiedGui.Hide()
 }
 
-; --- [5.2] 触发逻辑：Gemini 提示词模板合辑发送版 ---
+; --- [5.2] 触发逻辑：Gemini 提示词模板合辑发送版 (已优化：新建独立窗口 & 稳定焦点) ---
 OpenPromptUI(*) {
     SetTimer(HidePromptIcon, 0)
     HidePromptIcon()
@@ -488,58 +492,93 @@ TriggerPromptUpload(*) {
     template := (FileExist(PATH_ActivePrompt)) ? FileRead(PATH_ActivePrompt, "UTF-8") : "{text}"
     finalText := Trim(StrReplace(template, "{text}", g_LastCopiedText), " `t`r`n")
     
-    Run('"' PATH_Chrome '" --new-window --app="https://gemini.google.com/app"')
-    targetTitle := "Gemini ahk_exe chrome.exe"
+    ; 1. 记录运行前所有存在的 Gemini 窗口句柄，防止错误激活旧窗口
+    existingWins := Map()
+    try {
+        for hwnd in WinGetList("Gemini ahk_exe chrome.exe")
+            existingWins[hwnd] := true
+    }
     
-    if WinWait(targetTitle, , 8) {
-        WinActivate(targetTitle)
-        WinWaitActive(targetTitle, , 2)
-        Sleep(800)
+    ; 2. 启动全新的 Gemini 窗口
+    Run('"' PATH_Chrome '" --new-window --app="https://gemini.google.com/app"')
+    
+    ; 3. 轮询等待【全新】的窗口出现 (最多等待 10 秒)
+    newHwnd := 0
+    startTime := A_TickCount
+    while (A_TickCount - startTime < 10000) {
+        try {
+            for hwnd in WinGetList("Gemini ahk_exe chrome.exe") {
+                if !existingWins.Has(hwnd) {
+                    newHwnd := hwnd
+                    break 2  ; 跳出 while 循环
+                }
+            }
+        }
+        Sleep(150)
+    }
+    
+    if (newHwnd) {
+        ; 4. 强制激活并等待新窗口
+        WinActivate("ahk_id " newHwnd)
+        WinWaitActive("ahk_id " newHwnd, , 3)
+        
+        ; 5. 等待 Web 页面及 DOM 框架完全加载 (重要容错)
+        Sleep(2500) 
+        
+        ; 6. 通过快捷键 gi 强制获取输入框焦点，并在每次操作前验证窗口是否保持活跃
         Loop 3 {
+            WinActivate("ahk_id " newHwnd) 
             Send("{Esc}")
-            Sleep(50)
+            Sleep(100)
             Send("gi")
-            Sleep(300)
+            Sleep(400)
         }
         
         oldClip := ClipboardAll()
         hasImg  := (g_LastImageCopyTime > 0 && (A_TickCount - g_LastImageCopyTime) < 8000)
         
+        ; 7. 黏贴图片 (如果有)
         if (hasImg && g_SavedImageClip != "") {
             A_Clipboard := g_SavedImageClip
             if ClipWait(1, 1) {
-                Sleep(50)
+                Sleep(100)
                 Send("^v")
-                Sleep(1500)
+                Sleep(2000) ; Web 解析图片上传需较长时间，延迟加大
             }
         }
+        
+        ; 8. 黏贴文本内容
         if (finalText != "") {
             A_Clipboard := finalText
             if ClipWait(1) {
-                Sleep(50)
+                Sleep(100)
                 Send("^v")
-                Sleep(600)
+                ; 9. 极其关键的延迟：等待 React/Lit 框架响应 onChange 事件，激活发送按钮状态
+                Sleep(800) 
             }
         }
+        
+        ; 10. 触发发送
         SendEvent("{Ctrl down}{Enter}{Ctrl up}")
-        Sleep(300)
+        Sleep(400)
         A_Clipboard := oldClip
     } else {
-        ShowTip("打开 Gemini 窗口超时，请重试。")
+        ShowTip("打开 Gemini 新窗口超时，请重试。")
     }
 }
 
 ; --- [5.3] 触发逻辑：Gemini 剪贴板一键极速回车黏贴版 ---
 #+g:: {
-    if (g_IsImageReady) {
+    if (g_IsImageReady || g_IsTextReady) {
         TriggerUpload()
     }
 }
 TriggerUpload(*) {
-    global g_IsImageReady, APP_GeminiLnk
+    global g_IsImageReady, g_IsTextReady, APP_GeminiLnk
     SetTimer(HideFloatingIcon, 0)
     FloatingGui.Hide()
     g_IsImageReady := false
+    g_IsTextReady  := false
     
     try {
         oldMode := A_TitleMatchMode
