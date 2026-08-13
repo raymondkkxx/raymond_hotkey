@@ -3,50 +3,66 @@
 ListLines 0
 
 ; ==============================================================================
+;                  【零、 🛡️ 系统权限与环境初始化】
+; ==============================================================================
+; 强制脚本以管理员权限运行，确保能够关闭任务管理器等高权限进程
+if not A_IsAdmin {
+    try {
+        Run('*RunAs "' A_AhkPath '" "' A_ScriptFullPath '"')
+    }
+    ExitApp()
+}
+
+; ==============================================================================
 ;                  【一、 ⚙️ 全局用户配置控制台 (USER CONFIG)】
-;     说明：所有需要微调的坐标、时间阈值、程序与图标路径均在此修改，改后 Ctrl+S 生效
 ; ==============================================================================
 
-; --- [1.1] 悬浮窗相对鼠标的偏移坐标 (X轴：正向右/负向左 | Y轴：正向下/负向上) ---
-global CFG_PromptOffsetX    := -180   ; [Gemini 提示词窗] 默认处于鼠标右方 15px
-global CFG_PromptOffsetY    := -57    ; [Gemini 提示词窗] 默认处于鼠标上方 57px
+; 屏蔽长按按键时触发的 "71 hotkeys have been received" 警告弹窗
+A_MaxHotkeysPerInterval := 99000
 
-global CFG_GeminiOffsetX    := -10    ; [Gemini 直接上传] 默认处于鼠标左方 60px
-global CFG_GeminiOffsetY    := -120   ; [Gemini 直接上传] 默认处于鼠标上方 60px
+global CFG_PromptOffsetX    := -180
+global CFG_PromptOffsetY    := -57
+global CFG_GeminiOffsetX    := -10
+global CFG_GeminiOffsetY    := -120
+global CFG_YouGlishOffsetX  := -40
+global CFG_YouGlishOffsetY  := 20
+global CFG_CopiedOffsetX    := 100
+global CFG_CopiedOffsetY    := 50
 
-global CFG_YouGlishOffsetX  := -40    ; [YouGlish 发音搜索] 默认处于鼠标左方 40px (注：代码内已额外扣除图标自身宽度以保证向左延展)
-global CFG_YouGlishOffsetY  := 20     ; [YouGlish 发音搜索] 默认处于鼠标下方 15px (注：代码内已额外扣除图标一半高度以保证居中)
+global MIN_DRAG_X           := 35
+global MIN_DRAG_Y           := 45
+global MIN_DRAG_TIME_MS     := 50
+global MAX_DRAG_TIME_MS     := 15000
+global ESC_LONG_PRESS_MS    := 400
 
-global CFG_CopiedOffsetX    := 100    ; [Copied 成功提示] 默认处于鼠标右方 70px
-global CFG_CopiedOffsetY    := 50     ; [Copied 成功提示] 默认处于鼠标上方 2px
-
-; --- [1.2] 防误触与划词参数 ---
-global MIN_DRAG_X           := 35     ; 触发复制的最小水平移动距离 (像素)
-global MIN_DRAG_Y           := 45     ; 触发复制的最小垂直移动距离 (像素)
-global MIN_DRAG_TIME_MS     := 50     ; 触发复制的最小拖拽时间 (毫秒)
-global MAX_DRAG_TIME_MS     := 15000  ; 触发复制的最大拖拽时间 (毫秒)
-global ESC_LONG_PRESS_MS    := 400    ; 长按 Esc 接管左键关闭窗口的时限 (毫秒)
-
-; --- [1.3] 路径管理：基础目录与关键程序 ---
 global PATH_AppDir          := A_ScriptDir "\resources\"
 
-; 动态获取 Chrome 路径，保证跨电脑 100% 兼容
+; ------------------------------------------------------------------------------
+; [移植性优化] 动态获取浏览器路径 (优先 Chrome，无 Chrome 则自动降级使用系统自带的 Edge)
+global PATH_Chrome := ""
 Try {
-    global PATH_Chrome := RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe")
+    PATH_Chrome := RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe")
 } Catch {
-    global PATH_Chrome := "C:\Program Files\Google\Chrome\Application\chrome.exe"
+    PATH_Chrome := "C:\Program Files\Google\Chrome\Application\chrome.exe"
 }
+
+if !FileExist(PATH_Chrome) {
+    Try {
+        PATH_Chrome := RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe")
+    } Catch {
+        PATH_Chrome := "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+    }
+}
+; ------------------------------------------------------------------------------
 
 global PATH_EditorExe       := A_ScriptDir "\GeminiPromptEditor.exe"
 global PATH_ActivePrompt    := A_ScriptDir "\active_prompt.txt"
 
-; --- [1.4] 路径管理：图示与按钮素材 ---
 global ICON_Prompt          := PATH_AppDir "photo\gemini_prompt.png"
 global ICON_Gemini          := PATH_AppDir "photo\gemini.png"
 global ICON_YouGlish        := PATH_AppDir "photo\youglish_auto_load.png"
 global ICON_Copied          := PATH_AppDir "photo\copied.png"
 
-; --- [1.5] 路径管理：快捷启动软件与网址链接 (摒弃.lnk文件) ---
 global URL_Gemini           := "https://gemini.google.com/app"
 global URL_YouGlish         := "https://youglish.com/"
 global URL_DouYin           := "https://www.douyin.com/"
@@ -56,18 +72,45 @@ global URL_Github           := "https://github.com/"
 global URL_Zhihu            := "https://www.zhihu.com/"
 global URL_Reddit           := "https://www.reddit.com/"
 
-global APP_Telegram         := PATH_AppDir "programfiles\Telegram Desktop\Telegram.exe"
-global APP_Everything       := PATH_AppDir "programfiles\Everything\Everything.exe"
-global APP_Anytxt           := "C:\Program Files\Anytxt Searcher\ATGUI.exe"
-global APP_Notepad          := "C:\WINDOWS\notepad.exe"
+; ------------------------------------------------------------------------------
+; [移植性优化] 动态获取 Telegram 路径 (兼容便携版、注册表与默认安装版)
+global APP_Telegram := PATH_AppDir "programfiles\Telegram Desktop\Telegram.exe"
+if !FileExist(APP_Telegram) {
+    Try {
+        APP_Telegram := RegRead("HKEY_CURRENT_USER\Software\Classes\tg\shell\open\command")
+        APP_Telegram := StrReplace(APP_Telegram, '" "%1"', '')
+        APP_Telegram := StrReplace(APP_Telegram, '"', '')
+    } Catch {
+        APP_Telegram := EnvGet("APPDATA") "\Telegram Desktop\Telegram.exe"
+    }
+}
 
-; 同目录下的 4 个 Windows 批处理脚本 (使用 A_ScriptDir 相对路径，确保移动项目文件夹也能正常运行)
+; [移植性优化] 动态获取 Everything 路径 (兼容便携版与系统安装版)
+global APP_Everything       := PATH_AppDir "programfiles\Everything\Everything.exe"
+if !FileExist(APP_Everything) {
+    Try APP_Everything := RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\Everything.exe")
+    Catch
+        APP_Everything := A_ProgramFiles "\Everything\Everything.exe"
+}
+
+; [移植性优化] 动态获取 Anytxt 路径 (优先注册表，其次系统程序目录)
+global APP_Anytxt := ""
+Try {
+    APP_Anytxt := RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Classes\Applications\ATGUI.exe\shell\open\command")
+    APP_Anytxt := StrReplace(APP_Anytxt, '" "%1"', '') 
+    APP_Anytxt := StrReplace(APP_Anytxt, '"', '')
+} Catch {
+    APP_Anytxt := A_ProgramFiles "\Anytxt Searcher\ATGUI.exe"
+}
+; ------------------------------------------------------------------------------
+
+global APP_Notepad          := A_WinDir "\notepad.exe" 
+
 global APP_Ethernet         := A_ScriptDir "\Toggle_Ethernet_切换有线网口状态.bat"
 global APP_Shutdown         := A_ScriptDir "\shutdown_30second_等待30秒关机.bat"
 global APP_Restart          := A_ScriptDir "\restart_30second_等待30秒重启.bat"
 global APP_SecurityCenter   := A_ScriptDir "\windows security center_关闭安全中心设置.bat"
 
-; --- [1.6] 全局内部运行时状态 (非必要不改动) ---
 global g_IsPromptGuiVisible := false
 global g_IsImageReady       := false
 global g_IsTextReady        := false
@@ -84,7 +127,6 @@ global g_EscPressTime       := 0
 ;               【二、 🎨 悬浮窗 GUI 初始化与布局 (GUI MANAGER)】
 ; ==============================================================================
 
-; [1] Gemini Prompt 右上角提示词悬浮窗
 global PromptGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "PromptUploader")
 PromptGui.BackColor := "EEAA99"
 WinSetTransColor("EEAA99", PromptGui)
@@ -94,7 +136,6 @@ if FileExist(ICON_Prompt) {
     PromptGui.OnEvent("ContextMenu", OpenPromptUI)
 }
 
-; [2] Gemini 左上角快速黏贴悬浮窗
 global FloatingGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "GeminiUploader")
 FloatingGui.BackColor := "EEAA99"
 WinSetTransColor("EEAA99", FloatingGui)
@@ -103,7 +144,6 @@ if FileExist(ICON_Gemini) {
     geminiBtn.OnEvent("Click", TriggerUpload)
 }
 
-; [3] YouGlish 左侧划词发音搜索悬浮窗
 global YouGlishGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "YouGlishUploader")
 YouGlishGui.BackColor := "EEAA99"
 WinSetTransColor("EEAA99", YouGlishGui)
@@ -114,7 +154,6 @@ if FileExist(ICON_YouGlish) {
     ygBtn.GetPos(,, &g_YgWidth, &g_YgHeight)
 }
 
-; [4] Copied 划词成功文本提示悬浮窗
 global CopiedGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "CopiedIcon")
 CopiedGui.BackColor := "EEAA99"
 WinSetTransColor("EEAA99", CopiedGui)
@@ -127,7 +166,6 @@ if FileExist(ICON_Copied) {
 ;           【三、 ⌨️ 快捷键、快速启动与多击引擎 (HOTKEYS & MULTI-TAP)】
 ; ==============================================================================
 
-; --- [3.1] F1-F12 常用按键映射 ---
 F1::Send("^z")
 F3::Send("^v")
 F4::Send("^a")
@@ -142,7 +180,6 @@ End::Send("#+{Right}")
 PgUp::Send("^{Enter}")
 PgDn::Send("^v")
 
-; --- [3.2] 后台多键连按注册 (按键名, 连按次数, 响应回调) ---
 RegisterMultiTap("Space",   4, QuadSpaceAction)
 RegisterMultiTap("n",       5, PentaNAction)
 RegisterMultiTap("z",       3, TripleZAction)
@@ -207,7 +244,6 @@ QuadRButtonAction() {
     ShowTip("↩️ 触发 Enter")
 }
 
-; --- [3.3] 波浪号组合键启动器 (` & 数字/字母) ---
 ` & 1::SmartRun(PATH_Chrome)
 ` & 2::RunChromePWA(URL_Gemini)
 ` & 3::RunChromePWA(URL_Github)
@@ -233,15 +269,13 @@ RunChromePWA(URL) {
     if FileExist(PATH_Chrome) {
         Run('"' PATH_Chrome '" --app="' URL '"')
     } else {
-        ShowTip("无法启动：未在系统中找到 Chrome 浏览器`n" PATH_Chrome)
+        ShowTip("无法启动：未在系统中找到 浏览器`n" PATH_Chrome)
     }
 }
 
-; 恢复原按键基础输入
 `::SendText("``")
 +`::SendText("~")
 
-; --- [3.4] 记事本静默自动保存 ---
 #HotIf WinActive("ahk_class Notepad") || WinActive("ahk_exe Notepad.exe")
 SetTimer AutoSaveNotepad, 3000
 AutoSaveNotepad() {
@@ -271,7 +305,6 @@ AutoSaveNotepad() {
 ;           【四、 🖱️ 核心监听引擎：划词与剪贴板 (CORE LISTENERS)】
 ; ==============================================================================
 
-; --- [4.1] 剪贴板统一监听函数 ---
 OnClipboardChange(ClipboardChangedHandler)
 
 ClipboardChangedHandler(DataType) {
@@ -284,7 +317,6 @@ ClipboardChangedHandler(DataType) {
 CheckClipboardForImage() {
     global g_LastImageCopyTime, g_SavedImageClip, g_LastCopiedText, g_IsImageReady, g_IsTextReady
     
-    ; 检查剪贴板是否存在图像 CF_BITMAP=2, CF_DIB=8, CF_DIBV5=17
     if (DllCall("IsClipboardFormatAvailable", "UInt", 2) 
      || DllCall("IsClipboardFormatAvailable", "UInt", 8) 
      || DllCall("IsClipboardFormatAvailable", "UInt", 17)) {
@@ -294,8 +326,8 @@ CheckClipboardForImage() {
         g_IsImageReady      := true
         g_IsTextReady       := false
         
-        ShowPromptIcon()    ; [上放] 显示 Gemini 提示词窗
-        ShowFloatingIcon()  ; [左放] 显示 Gemini 直接黏贴窗
+        ShowPromptIcon()    
+        ShowFloatingIcon()  
     } else {
         g_IsImageReady      := false
         g_LastImageCopyTime := 0
@@ -305,13 +337,11 @@ CheckClipboardForImage() {
     }
 }
 
-; --- [4.2] 划词操作全方位安全保护与复制执行 ---
 ~LButton:: {
     global g_DragStartX, g_DragStartY, g_DragStartTime, g_IsPromptGuiVisible, g_PromptShowX, g_PromptShowY
     MouseGetPos(&g_DragStartX, &g_DragStartY)
     g_DragStartTime := A_TickCount
     
-    ; 鼠标远离提示词窗 500px 自动关闭
     if (g_IsPromptGuiVisible && Sqrt((g_DragStartX - g_PromptShowX)**2 + (g_DragStartY - g_PromptShowY)**2) > 500) {
         HidePromptIcon()
     }
@@ -321,25 +351,28 @@ CheckClipboardForImage() {
     global g_DragStartX, g_DragStartY, g_DragStartTime, g_LastCopiedText, g_ClipLastChangeTime, g_LastImageCopyTime, g_IsTextReady
     releaseTime := A_TickCount
 
-    ; [规则 1] 黑名单窗口屏蔽 (如截屏软件、系统核心栏)
     if WinActive("ahk_class Windows.UI.Core.CoreWindow") 
     || WinActive("ahk_exe SnippingTool.exe") || WinActive("ahk_exe SnippingToolApp.exe")
     || WinActive("ahk_exe Snipaste.exe") || WinActive("ahk_exe PixPin.exe") {
         return
     }
 
-    ; [规则 2] 十字形截图光标、特定浏览器区域(顶部标签栏)、修饰键按压状态过滤
+    ; [移植性优化] 动态计算当前屏幕的 DPI 缩放比例 (100%缩放为1, 125%缩放为1.25)
+    global DPIScale := A_ScreenDPI / 96 
+
     if (A_Cursor = "Cross") || GetKeyState("Shift", "P") || GetKeyState("Ctrl", "P") || GetKeyState("Alt", "P") {
         return
     }
-    if WinActive("ahk_exe chrome.exe") && (g_DragStartY < 120) {
-        return
+    
+    if WinActive("ahk_exe chrome.exe") || WinActive("ahk_exe msedge.exe") { 
+        if (g_DragStartY < 120 * DPIScale) {
+            return
+        }
     }
-    if WinActive("ahk_exe Code.exe") && (g_DragStartX < 80 || g_DragStartY < 70) {
+    if WinActive("ahk_exe Code.exe") && (g_DragStartX < 80 * DPIScale || g_DragStartY < 70 * DPIScale) {
         return
     }
 
-    ; [规则 3] 拖拽持续时长拦截
     dragTime := A_TickCount - g_DragStartTime
     if (dragTime < MIN_DRAG_TIME_MS || dragTime > MAX_DRAG_TIME_MS) {
         return
@@ -349,15 +382,12 @@ CheckClipboardForImage() {
     deltaX := Abs(endX - g_DragStartX)
     deltaY := Abs(endY - g_DragStartY)
 
-    ; [规则 4] 物理位移达到要求才开启复制工作流程
     if (deltaX > MIN_DRAG_X || deltaY > MIN_DRAG_Y) {
         
-        ; 保护剪贴板内图片不过期：若 8 秒内复制过图片，阻拦常规文字划词触发
         if (g_LastImageCopyTime > 0 && (A_TickCount - g_LastImageCopyTime) < 8000) {
             return
         }
 
-        ; 防止剪贴板写入竞争
         isBusy := false
         Loop 2 {
             Sleep(40)
@@ -380,7 +410,6 @@ CheckClipboardForImage() {
         Send("^c")
 
         if ClipWait(0.15, 1) {
-            ; 过滤文件及文件夹拖动 (CF_HDROP = 15) 及图像
             if DllCall("IsClipboardFormatAvailable", "UInt", 15)
             || DllCall("IsClipboardFormatAvailable", "UInt", 2) 
             || DllCall("IsClipboardFormatAvailable", "UInt", 8) 
@@ -395,21 +424,19 @@ CheckClipboardForImage() {
                 return
             }
 
-            ; 单行划词却含换行符，视为误选返回
             if (deltaY < 25 && (InStr(A_Clipboard, "`n") || InStr(A_Clipboard, "`r"))) {
                 A_Clipboard := oldClip
                 return
             }
 
-            ; 成功提取变化纯文本：触发全阵列悬浮图标提示
             if (trimmedText != priorText) {
                 g_LastCopiedText := trimmedText
                 g_IsTextReady    := true
                 
-                ShowPromptIcon()    ; [右上] Gemini提示词
-                ShowCopiedIcon()    ; [正右] 复制反馈字样
-                ShowYouGlishIcon()  ; [正左] YouGlish发音
-                ShowFloatingIcon()  ; [左上] Gemini直接上传
+                ShowPromptIcon()    
+                ShowCopiedIcon()    
+                ShowYouGlishIcon()  
+                ShowFloatingIcon()  
             } else {
                 A_Clipboard := oldClip
             }
@@ -424,7 +451,6 @@ CheckClipboardForImage() {
 ;           【五、 🚀 业务逻辑与程序调度执行器 (UPLOAD & EXECUTION)】
 ; ==============================================================================
 
-; --- [5.1] GUI 悬浮窗口定位渲染管理 ---
 ShowPromptIcon() {
     global g_IsPromptGuiVisible, g_PromptShowX, g_PromptShowY, CFG_PromptOffsetX, CFG_PromptOffsetY
     oldCoord := A_CoordModeMouse
@@ -486,7 +512,6 @@ HideCopiedIcon(*) {
     CopiedGui.Hide()
 }
 
-; --- [5.2] 触发逻辑：Gemini 提示词模板合辑发送版 (已优化：新建独立窗口 & 稳定焦点) ---
 OpenPromptUI(*) {
     SetTimer(HidePromptIcon, 0)
     HidePromptIcon()
@@ -505,25 +530,22 @@ TriggerPromptUpload(*) {
     template := (FileExist(PATH_ActivePrompt)) ? FileRead(PATH_ActivePrompt, "UTF-8") : "{text}"
     finalText := Trim(StrReplace(template, "{text}", g_LastCopiedText), " `t`r`n")
     
-    ; 1. 记录运行前所有存在的 Gemini 窗口句柄，防止错误激活旧窗口
     existingWins := Map()
     try {
-        for hwnd in WinGetList("Gemini ahk_exe chrome.exe")
+        for hwnd in WinGetList("Gemini")
             existingWins[hwnd] := true
     }
     
-    ; 2. 启动全新的 Gemini 窗口
     Run('"' PATH_Chrome '" --new-window --app="https://gemini.google.com/app"')
     
-    ; 3. 轮询等待【全新】的窗口出现 (最多等待 10 秒)
     newHwnd := 0
     startTime := A_TickCount
     while (A_TickCount - startTime < 10000) {
         try {
-            for hwnd in WinGetList("Gemini ahk_exe chrome.exe") {
+            for hwnd in WinGetList("Gemini") {
                 if !existingWins.Has(hwnd) {
                     newHwnd := hwnd
-                    break 2  ; 跳出 while 循环
+                    break 2  
                 }
             }
         }
@@ -531,14 +553,11 @@ TriggerPromptUpload(*) {
     }
     
     if (newHwnd) {
-        ; 4. 强制激活并等待新窗口
         WinActivate("ahk_id " newHwnd)
         WinWaitActive("ahk_id " newHwnd, , 3)
         
-        ; 5. 等待 Web 页面及 DOM 框架完全加载 (重要容错)
         Sleep(2500) 
         
-        ; 6. 通过快捷键 gi 强制获取输入框焦点，并在每次操作前验证窗口是否保持活跃
         Loop 3 {
             WinActivate("ahk_id " newHwnd) 
             Send("{Esc}")
@@ -550,28 +569,24 @@ TriggerPromptUpload(*) {
         oldClip := ClipboardAll()
         hasImg  := (g_LastImageCopyTime > 0 && (A_TickCount - g_LastImageCopyTime) < 8000)
         
-        ; 7. 黏贴图片 (如果有)
         if (hasImg && g_SavedImageClip != "") {
             A_Clipboard := g_SavedImageClip
             if ClipWait(1, 1) {
                 Sleep(100)
                 Send("^v")
-                Sleep(2000) ; Web 解析图片上传需较长时间，延迟加大
+                Sleep(2000) 
             }
         }
         
-        ; 8. 黏贴文本内容
         if (finalText != "") {
             A_Clipboard := finalText
             if ClipWait(1) {
                 Sleep(100)
                 Send("^v")
-                ; 9. 极其关键的延迟：等待 React/Lit 框架响应 onChange 事件，激活发送按钮状态
                 Sleep(800) 
             }
         }
         
-        ; 10. 触发发送
         SendEvent("{Ctrl down}{Enter}{Ctrl up}")
         Sleep(400)
         A_Clipboard := oldClip
@@ -580,7 +595,6 @@ TriggerPromptUpload(*) {
     }
 }
 
-; --- [5.3] 触发逻辑：Gemini 剪贴板一键极速回车黏贴版 ---
 #+g:: {
     if (g_IsImageReady || g_IsTextReady) {
         TriggerUpload()
@@ -596,7 +610,7 @@ TriggerUpload(*) {
     try {
         oldMode := A_TitleMatchMode
         SetTitleMatchMode(2)
-        targetTitle := "Gemini ahk_exe chrome.exe"
+        targetTitle := "Gemini"
         
         if WinActive(targetTitle) {
             Send("{Esc}")
@@ -629,7 +643,6 @@ TriggerUpload(*) {
     }
 }
 
-; --- [5.4] 触发逻辑：YouGlish 划词自动发音查询 ---
 ^+y::TriggerYouGlish()
 TriggerYouGlish(*) {
     global g_IsTextReady, URL_YouGlish, PATH_Chrome
@@ -640,7 +653,7 @@ TriggerYouGlish(*) {
     try {
         oldMode := A_TitleMatchMode
         SetTitleMatchMode(2)
-        targetTitle := "youglish ahk_exe chrome.exe"
+        targetTitle := "youglish"
         
         if WinActive(targetTitle) {
             Send("{Esc}")
@@ -684,7 +697,6 @@ TriggerYouGlish(*) {
 ;           【六、 🛡️ 系统功能与窗口工具 (SYSTEM & WINDOW UTILITIES)】
 ; ==============================================================================
 
-; --- [6.1] 开发热重载：脚本编辑器中 Ctrl+S 立即应用变更 ---
 if (A_Args.Length > 0 && A_Args[1] == "/reloaded") {
     ShowTip("🚀 脚本已成功加载新参数！")
 }
@@ -696,7 +708,6 @@ if (A_Args.Length > 0 && A_Args[1] == "/reloaded") {
 }
 #HotIf
 
-; --- [6.2] 全局鼠标滚轮联动：滚动即可隐藏一切悬浮图标 ---
 ~WheelUp::
 ~WheelDown:: {
     HidePromptIcon()
@@ -705,12 +716,13 @@ if (A_Args.Length > 0 && A_Args[1] == "/reloaded") {
     HideCopiedIcon()
 }
 
-; --- [6.3] 全局 Esc 智能行为：点击清除悬浮窗，长按配合左键强制杀后台进程 ---
 ~Esc:: {
     global g_EscPressTime
-    if (g_EscPressTime == 0) {
-        g_EscPressTime := A_TickCount
+    ; 拦截按键长按时的系统重复连发信号，解决 "71 hotkeys" 报错
+    if (g_EscPressTime > 0) {
+        return
     }
+    g_EscPressTime := A_TickCount
     HidePromptIcon()
     HideFloatingIcon()
     HideYouGlishIcon()
@@ -720,36 +732,67 @@ if (A_Args.Length > 0 && A_Args[1] == "/reloaded") {
     global g_EscPressTime := 0
 }
 
+; ------------------------------------------------------------------------------
+; [权限增强] Esc + 鼠标左键：强制关闭单个窗口 (废弃 Esc+右键 与 ProcessClose)
 #HotIf GetKeyState("Esc", "P")
+
 $LButton:: {
     global g_EscPressTime, ESC_LONG_PRESS_MS
     if (g_EscPressTime > 0 && (A_TickCount - g_EscPressTime >= ESC_LONG_PRESS_MS)) {
-        MouseGetPos ,, &hoverWin
+        MouseGetPos(,, &hoverWin)
         if hoverWin {
             try {
-                WinClose hoverWin
+                ; 仅关闭当前悬停的单个窗口，彻底摒弃 ProcessClose 杀进程，防止波及其他浏览器页面
+                WinClose("ahk_id " hoverWin)
+            } catch {
+                ShowTip("❌ 关闭窗口失败")
             }
         }
     } else {
-        Send "{Blind}{LButton down}"
+        ; 恢复原有的按键基础输入
+        Send("{Blind}{LButton down}")
         KeyWait("LButton")
         Send("{Blind}{LButton up}")
     }
 }
 #HotIf
+; ------------------------------------------------------------------------------
 
-; --- [6.4] Win+J 强制恢复全部被最小化的窗口 ---
+; ------------------------------------------------------------------------------
+; [稳定性增强] Win+J 强制恢复被最小化的核心应用窗口
 #j:: {
-    for this_id in WinGetList(,, "Program Manager") {
-        if (WinGetMinMax(this_id) == -1) {
-            if (WinGetTitle(this_id) != "") {
-                WinRestore(this_id)
+    restoredCount := 0
+    
+    for hwnd in WinGetList() {
+        if (WinGetMinMax(hwnd) == -1) {  ; 仅处理当前处于"最小化"状态的窗口
+            title   := WinGetTitle(hwnd)
+            class   := WinGetClass(hwnd)
+            exStyle := WinGetExStyle(hwnd)
+            
+            ; 过滤规则1：过滤没有标题的幽灵窗口以及系统桌面基层 (防止恢复出奇怪的底板)
+            if (title == "" || class == "Progman" || class == "WorkerW")
+                continue
+                
+            ; 过滤规则2：过滤特殊的工具条或隐藏式的后台悬浮窗 (防止破坏 UI 布局)
+            if (exStyle & 0x00000080) ; WS_EX_TOOLWINDOW
+                continue
+
+            try {
+                WinRestore(hwnd)
+                restoredCount++
             }
         }
     }
+    
+    ; 增加恢复数量的反馈提示
+    if (restoredCount > 0) {
+        ShowTip("🔄 成功唤醒了 " restoredCount " 个最小化窗口")
+    } else {
+        ShowTip("ℹ️ 当前没有需要恢复的最小化窗口")
+    }
 }
+; ------------------------------------------------------------------------------
 
-; --- [6.5] 多按键与多模块公用反馈信息提示方法 ---
 RegisterMultiTap(key, targetCount, callback, maxSpeedInterval := 200) {
     static stateMap := Map()
     stateMap[key] := { count: 0, lastTime: 0, triggered: false }
