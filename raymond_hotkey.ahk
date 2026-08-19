@@ -127,7 +127,7 @@ global g_EscPressTime       := 0
 ;                【二、 🎨 悬浮窗 GUI 初始化与布局 (GUI MANAGER)】
 ; ==============================================================================
 
-global PromptGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "PromptUploader")
+PromptGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "PromptUploader")
 PromptGui.BackColor := "EEAA99"
 WinSetTransColor("EEAA99", PromptGui)
 if FileExist(ICON_Prompt) {
@@ -136,7 +136,7 @@ if FileExist(ICON_Prompt) {
     PromptGui.OnEvent("ContextMenu", OpenPromptUI)
 }
 
-global FloatingGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "GeminiUploader")
+FloatingGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "GeminiUploader")
 FloatingGui.BackColor := "EEAA99"
 WinSetTransColor("EEAA99", FloatingGui)
 if FileExist(ICON_Gemini) {
@@ -144,7 +144,7 @@ if FileExist(ICON_Gemini) {
     geminiBtn.OnEvent("Click", TriggerUpload)
 }
 
-global YouGlishGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "YouGlishUploader")
+YouGlishGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "YouGlishUploader")
 YouGlishGui.BackColor := "EEAA99"
 WinSetTransColor("EEAA99", YouGlishGui)
 global g_YgWidth := 0, g_YgHeight := 0
@@ -154,7 +154,7 @@ if FileExist(ICON_YouGlish) {
     ygBtn.GetPos(,, &g_YgWidth, &g_YgHeight)
 }
 
-global CopiedGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "CopiedIcon")
+CopiedGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "CopiedIcon")
 CopiedGui.BackColor := "EEAA99"
 WinSetTransColor("EEAA99", CopiedGui)
 if FileExist(ICON_Copied) {
@@ -226,7 +226,6 @@ TripleAAction() {
 QuadGAction() {
     Send("{Backspace 4}")
     Sleep(30)
-    ; 只要有待发送图片、选中文本或剪贴板内有任何文本内容，均直接触发上传
     if (g_IsImageReady || g_IsTextReady || A_Clipboard != "") {
         TriggerUpload()
     } else {
@@ -255,31 +254,21 @@ QuadRButtonAction() {
 ` & 8::SmartRun(APP_Telegram)
 ` & 9::SmartRun(APP_Restart)
 ` & 0::SmartRun(APP_Shutdown)
-` & d::Run(A_Desktop)          ; [新增] 一键打开 Windows 桌面文件夹
+` & d::Run('explorer.exe "' A_Desktop '"')
 ` & n::SmartRun(APP_Ethernet)
 ` & s::SmartRun(APP_SecurityCenter)  
 
-; ------------------------------------------------------------------------------
-; [修改功能] ` + Delete：一键关闭所有正在运行的 AHK 脚本（包括自身）
-; ------------------------------------------------------------------------------
 ` & Delete:: {
-    ; 允许脚本检测隐藏的系统托盘窗口（AHK 脚本通常运行在后台）
     DetectHiddenWindows true 
-    
-    ; 获取所有 AHK 脚本的窗口句柄列表
     ahkList := WinGetList("ahk_class AutoHotkey")
     
     for hwnd in ahkList {
-        ; 遍历并关闭其他所有的 AHK 脚本，避开当前脚本以免逻辑中断
         if (hwnd != A_ScriptHwnd) {
             try WinClose("ahk_id " hwnd)
         }
     }
-    
-    ; 其他脚本清理完毕后，退出当前脚本自身
     ExitApp() 
 }
-; ------------------------------------------------------------------------------
 
 SmartRun(Path) {
     if FileExist(Path) {
@@ -353,7 +342,6 @@ CheckClipboardForImage() {
         ShowPromptIcon()    
         ShowFloatingIcon()  
     } else if (A_Clipboard != "") {
-        ; 剪贴板中有文本，标记文本就绪
         g_IsImageReady      := false
         g_LastImageCopyTime := 0
         g_IsTextReady       := true
@@ -385,7 +373,6 @@ CheckClipboardForImage() {
         return
     }
 
-    ; [移植性优化] 动态计算当前屏幕的 DPI 缩放比例 (100%缩放为1, 125%缩放为1.25)
     global DPIScale := A_ScreenDPI / 96 
 
     if (A_Cursor = "Cross") || GetKeyState("Shift", "P") || GetKeyState("Ctrl", "P") || GetKeyState("Alt", "P") {
@@ -746,7 +733,6 @@ if (A_Args.Length > 0 && A_Args[1] == "/reloaded") {
 
 ~Esc:: {
     global g_EscPressTime
-    ; 拦截按键长按时的系统重复连发信号，解决 "71 hotkeys" 报错
     if (g_EscPressTime > 0) {
         return
     }
@@ -761,47 +747,58 @@ if (A_Args.Length > 0 && A_Args[1] == "/reloaded") {
 }
 
 ; ------------------------------------------------------------------------------
-; [权限增强] Esc + 鼠标左键：强制关闭单个窗口 (废弃 Esc+右键 与 ProcessClose)
+; [权限增强] Esc + 鼠标左键 (长按400ms) / Alt + 鼠标左键：关闭当前悬停窗口
 #HotIf GetKeyState("Esc", "P")
-
 $LButton:: {
     global g_EscPressTime, ESC_LONG_PRESS_MS
     if (g_EscPressTime > 0 && (A_TickCount - g_EscPressTime >= ESC_LONG_PRESS_MS)) {
         MouseGetPos(,, &hoverWin)
         if hoverWin {
             try {
-                ; 仅关闭当前悬停的单个窗口，彻底摒弃 ProcessClose 杀进程，防止波及其他浏览器页面
                 WinClose("ahk_id " hoverWin)
             } catch {
                 ShowTip("❌ 关闭窗口失败")
             }
         }
     } else {
-        ; 恢复原有的按键基础输入
         Send("{Blind}{LButton down}")
         KeyWait("LButton")
         Send("{Blind}{LButton up}")
     }
 }
 #HotIf
+
+!LButton:: {
+    MouseGetPos(,, &hoverWin)
+    if hoverWin {
+        try {
+            WinClose("ahk_id " hoverWin)
+        } catch {
+            ShowTip("❌ 关闭窗口失败")
+        }
+    }
+}
 ; ------------------------------------------------------------------------------
 
 ; ------------------------------------------------------------------------------
-; [新增功能] Shift + 鼠标左键：最大化/还原当前悬停窗口
-; 兼容鼠标物理按键与触摸板轻触模拟点击，且无视任何程序限制全局触发。
+; [快捷操作] 方向上键(Up) + 鼠标左键：触发 Ctrl + Space
+#HotIf GetKeyState("Up", "P")
+$LButton::Send("^{Space}")
+#HotIf
+; ------------------------------------------------------------------------------
+
+; ------------------------------------------------------------------------------
+; [窗口控制] Shift + 鼠标左键：最大化/还原当前悬停窗口
 +LButton:: {
     MouseGetPos(,, &hoverWin)
     if hoverWin {
         try {
-            ; 1 为已最大化状态，将其还原
             if (WinGetMinMax("ahk_id " hoverWin) == 1) {
                 WinRestore("ahk_id " hoverWin)
             } else {
-                ; 否则执行最大化
                 WinMaximize("ahk_id " hoverWin)
             }
         } catch {
-            ; 如果由于权限或某些特殊窗口限制导致操作报错，仅提示而不让脚本崩溃
             ShowTip("❌ 窗口操作失败")
         }
     }
@@ -814,17 +811,15 @@ $LButton:: {
     restoredCount := 0
     
     for hwnd in WinGetList() {
-        if (WinGetMinMax(hwnd) == -1) {  ; 仅处理当前处于"最小化"状态的窗口
+        if (WinGetMinMax(hwnd) == -1) {
             title   := WinGetTitle(hwnd)
             class   := WinGetClass(hwnd)
             exStyle := WinGetExStyle(hwnd)
             
-            ; 过滤规则1：过滤没有标题的幽灵窗口以及系统桌面基层 (防止恢复出奇怪的底板)
             if (title == "" || class == "Progman" || class == "WorkerW")
                 continue
                 
-            ; 过滤规则2：过滤特殊的工具条或隐藏式的后台悬浮窗 (防止破坏 UI 布局)
-            if (exStyle & 0x00000080) ; WS_EX_TOOLWINDOW
+            if (exStyle & 0x00000080)
                 continue
 
             try {
@@ -834,7 +829,6 @@ $LButton:: {
         }
     }
     
-    ; 增加恢复数量的反馈提示
     if (restoredCount > 0) {
         ShowTip("🔄 成功唤醒了 " restoredCount " 个最小化窗口")
     } else {
