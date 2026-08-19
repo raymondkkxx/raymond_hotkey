@@ -124,7 +124,7 @@ global g_EscPressTime       := 0
 
 
 ; ==============================================================================
-;               【二、 🎨 悬浮窗 GUI 初始化与布局 (GUI MANAGER)】
+;                【二、 🎨 悬浮窗 GUI 初始化与布局 (GUI MANAGER)】
 ; ==============================================================================
 
 global PromptGui := Gui("+AlwaysOnTop -Caption +ToolWindow", "PromptUploader")
@@ -163,7 +163,7 @@ if FileExist(ICON_Copied) {
 
 
 ; ==============================================================================
-;           【三、 ⌨️ 快捷键、快速启动与多击引擎 (HOTKEYS & MULTI-TAP)】
+;            【三、 ⌨️ 快捷键、快速启动与多击引擎 (HOTKEYS & MULTI-TAP)】
 ; ==============================================================================
 
 F1::Send("^z")
@@ -226,7 +226,8 @@ TripleAAction() {
 QuadGAction() {
     Send("{Backspace 4}")
     Sleep(30)
-    if (g_IsImageReady || g_IsTextReady) {
+    ; 只要有待发送图片、选中文本或剪贴板内有任何文本内容，均直接触发上传
+    if (g_IsImageReady || g_IsTextReady || A_Clipboard != "") {
         TriggerUpload()
     } else {
         ShowTip("剪贴板中无有效图片或文本")
@@ -254,6 +255,7 @@ QuadRButtonAction() {
 ` & 8::SmartRun(APP_Telegram)
 ` & 9::SmartRun(APP_Restart)
 ` & 0::SmartRun(APP_Shutdown)
+` & d::Run(A_Desktop)          ; [新增] 一键打开 Windows 桌面文件夹
 ` & n::SmartRun(APP_Ethernet)
 ` & s::SmartRun(APP_SecurityCenter)  
 
@@ -324,7 +326,7 @@ AutoSaveNotepad() {
 
 
 ; ==============================================================================
-;           【四、 🖱️ 核心监听引擎：划词与剪贴板 (CORE LISTENERS)】
+;            【四、 🖱️ 核心监听引擎：划词与剪贴板 (CORE LISTENERS)】
 ; ==============================================================================
 
 OnClipboardChange(ClipboardChangedHandler)
@@ -350,12 +352,16 @@ CheckClipboardForImage() {
         
         ShowPromptIcon()    
         ShowFloatingIcon()  
-    } else {
+    } else if (A_Clipboard != "") {
+        ; 剪贴板中有文本，标记文本就绪
         g_IsImageReady      := false
         g_LastImageCopyTime := 0
-        if (!g_IsTextReady) {
-            HideFloatingIcon()
-        }
+        g_IsTextReady       := true
+    } else {
+        g_IsImageReady      := false
+        g_IsTextReady       := false
+        g_LastImageCopyTime := 0
+        HideFloatingIcon()
     }
 }
 
@@ -470,7 +476,7 @@ CheckClipboardForImage() {
 
 
 ; ==============================================================================
-;           【五、 🚀 业务逻辑与程序调度执行器 (UPLOAD & EXECUTION)】
+;            【五、 🚀 业务逻辑与程序调度执行器 (UPLOAD & EXECUTION)】
 ; ==============================================================================
 
 ShowPromptIcon() {
@@ -618,7 +624,7 @@ TriggerPromptUpload(*) {
 }
 
 #+g:: {
-    if (g_IsImageReady || g_IsTextReady) {
+    if (g_IsImageReady || g_IsTextReady || A_Clipboard != "") {
         TriggerUpload()
     }
 }
@@ -716,7 +722,7 @@ TriggerYouGlish(*) {
 
 
 ; ==============================================================================
-;           【六、 🛡️ 系统功能与窗口工具 (SYSTEM & WINDOW UTILITIES)】
+;            【六、 🛡️ 系统功能与窗口工具 (SYSTEM & WINDOW UTILITIES)】
 ; ==============================================================================
 
 if (A_Args.Length > 0 && A_Args[1] == "/reloaded") {
